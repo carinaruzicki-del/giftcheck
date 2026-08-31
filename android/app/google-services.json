@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1028910159750",
+    "project_id": "giftcheck-94700",
+    "storage_bucket": "giftcheck-94700.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1028910159750:android:6747b176d4294b7fe73e07",
+        "android_client_info": {
+          "package_name": "com.example.giftcheck"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDPgZ97UXnUI9lDAt8AiBgn0o9PWPBRn3Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
