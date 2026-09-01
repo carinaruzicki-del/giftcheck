@@ -200,4 +200,3 @@ function runFfmpeg(argumentsList) {
         });
     });
 }
-

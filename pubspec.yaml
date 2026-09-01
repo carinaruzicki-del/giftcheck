@@ -44,6 +44,7 @@ dependencies:
   cloud_firestore: ^6.8.0
   mobile_scanner: ^7.4.0
   google_fonts: ^6.2.1
+  cloud_functions: ^6.4.0
 
 flutter:
   uses-material-design: true

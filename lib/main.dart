@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
@@ -95,6 +96,31 @@ String qrDataForGiftCard(GiftCard giftCard) {
       'Vence:$expirationText';
 }
 
+bool isGiftCardExpired(DateTime? expirationDate) {
+  if (expirationDate == null) {
+    return false;
+  }
+
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final expirationDay = DateTime(
+    expirationDate.year,
+    expirationDate.month,
+    expirationDate.day,
+  );
+
+  return today.isAfter(expirationDay);
+}
+
+String effectiveGiftCardStatus(String status, DateTime? expirationDate) {
+  if ((status == 'Activa' || status == 'Parcialmente usada') &&
+      isGiftCardExpired(expirationDate)) {
+    return 'Vencida';
+  }
+
+  return status;
+}
+
 InputDecoration appInputDecoration({
   required String label,
   String? hint,
@@ -145,6 +171,8 @@ class GiftCard {
     this.senderName = '',
     this.recipientName = '',
   });
+
+  String get displayStatus => effectiveGiftCardStatus(status, expirationDate);
 
   GiftCard copyWith({
     String? status,
@@ -1347,9 +1375,18 @@ class LocalHomePage extends StatelessWidget {
       );
       final expirationValue = giftCardData['expirationDate'];
 
-      final expirationText = expirationValue is Timestamp
-          ? formatDate(expirationValue.toDate())
-          : '';
+      final expirationDate = expirationValue is Timestamp
+          ? expirationValue.toDate()
+          : null;
+
+      final expirationText = expirationDate == null
+          ? 'Sin vencimiento'
+          : formatDate(expirationDate);
+
+      final displayStatus = effectiveGiftCardStatus(
+        giftCardData['status']?.toString() ?? 'Activa',
+        expirationDate,
+      );
 
       showDialog(
         context: context,
@@ -1410,7 +1447,14 @@ class LocalHomePage extends StatelessWidget {
                     ),
 
                     const SizedBox(height: 8),
-                    Text('Estado: ${giftCardData['status'] ?? 'Activa'}'),
+                    Text('Estado: $displayStatus'),
+                    if (displayStatus == 'Vencida') ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Venció el $expirationText.',
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ],
                     if (usageRecords.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       const Text(
@@ -1438,8 +1482,8 @@ class LocalHomePage extends StatelessWidget {
             ),
 
             actions: [
-              if (giftCardData['status'] == 'Activa' ||
-                  giftCardData['status'] == 'Parcialmente usada')
+              if (displayStatus == 'Activa' ||
+                  displayStatus == 'Parcialmente usada')
                 FilledButton(
                   onPressed: () {
                     Navigator.pop(dialogContext);
@@ -1510,6 +1554,18 @@ class LocalHomePage extends StatelessWidget {
       return;
     }
 
+    final rawExpirationValue = giftCardData['expirationDate'];
+    final rawExpirationDate = rawExpirationValue is Timestamp
+        ? rawExpirationValue.toDate()
+        : null;
+
+    if (isGiftCardExpired(rawExpirationDate)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Esta Gift Card está vencida.')),
+      );
+      return;
+    }
+
     final amountController = TextEditingController();
 
     final amountText = await showDialog<String>(
@@ -1568,6 +1624,7 @@ class LocalHomePage extends StatelessWidget {
                 TextField(
                   controller: amountController,
                   keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: InputDecoration(
                     labelText: 'Importe a utilizar',
                     hintText:
@@ -2127,6 +2184,10 @@ class _AdminHomePageState extends State<AdminHomePage> {
       return Colors.orange.shade800;
     }
 
+    if (status == 'Vencida') {
+      return const Color(0xFF374151);
+    }
+
     return greenColor;
   }
 
@@ -2137,6 +2198,10 @@ class _AdminHomePageState extends State<AdminHomePage> {
 
     if (status == 'Bloqueada') {
       return Colors.orange.shade50;
+    }
+
+    if (status == 'Vencida') {
+      return const Color(0xFFE5E7EB);
     }
 
     return const Color(0xFFE4F3EA);
@@ -2239,6 +2304,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
           ? 'Anulada'
           : giftCard.status == 'Bloqueada'
           ? 'Bloqueada'
+          : isGiftCardExpired(giftCard.expirationDate)
+          ? 'Vencida'
           : 'Parcialmente usada';
 
       await showUsageReceipt(
@@ -2288,7 +2355,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
               const SizedBox(height: 8),
               Text('Vence: $expirationText'),
               const SizedBox(height: 8),
-              Text('Estado: ${giftCard.status}'),
+              Text('Estado: ${giftCard.displayStatus}'),
             ],
           ),
           actions: [
@@ -2609,11 +2676,11 @@ class _AdminHomePageState extends State<AdminHomePage> {
                       onTap: () => _showDetails(giftCard),
                       leading: CircleAvatar(
                         backgroundColor: _statusBackgroundColor(
-                          giftCard.status,
+                          giftCard.displayStatus,
                         ),
                         child: Icon(
                           Icons.card_giftcard_rounded,
-                          color: _statusColor(giftCard.status),
+                          color: _statusColor(giftCard.displayStatus),
                         ),
                       ),
                       title: const Text(
@@ -2627,12 +2694,12 @@ class _AdminHomePageState extends State<AdminHomePage> {
                       ),
                       isThreeLine: true,
                       trailing: Chip(
-                        label: Text(giftCard.status),
+                        label: Text(giftCard.displayStatus),
                         backgroundColor: _statusBackgroundColor(
-                          giftCard.status,
+                          giftCard.displayStatus,
                         ),
                         labelStyle: TextStyle(
-                          color: _statusColor(giftCard.status),
+                          color: _statusColor(giftCard.displayStatus),
                           fontSize: 12,
                         ),
                       ),
@@ -3948,6 +4015,7 @@ class _CreateGiftCardPageState extends State<CreateGiftCardPage> {
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     decoration: appInputDecoration(
                       label: 'Importe',
                       hint: 'Ejemplo: 50000',
@@ -5628,6 +5696,8 @@ class GiftCardHistoryPage extends StatelessWidget {
         return const Color(0xFFFFF0D9);
       case 'Anulada':
         return const Color(0xFFFFE3E3);
+      case 'Vencida':
+        return const Color(0xFFE5E7EB);
       default:
         return const Color(0xFFE4F3EA);
     }
@@ -5639,6 +5709,8 @@ class GiftCardHistoryPage extends StatelessWidget {
         return const Color(0xFFB56A00);
       case 'Anulada':
         return const Color(0xFFB3261E);
+      case 'Vencida':
+        return const Color(0xFF374151);
       default:
         return greenColor;
     }
@@ -5670,6 +5742,8 @@ class GiftCardHistoryPage extends StatelessWidget {
           ? 'Anulada'
           : giftCard.status == 'Bloqueada'
           ? 'Bloqueada'
+          : isGiftCardExpired(giftCard.expirationDate)
+          ? 'Vencida'
           : 'Parcialmente usada';
 
       await showUsageReceipt(
@@ -5702,7 +5776,7 @@ class GiftCardHistoryPage extends StatelessWidget {
               const SizedBox(height: 8),
               Text('Vencimiento: $expirationText'),
               const SizedBox(height: 8),
-              Text('Estado: ${giftCard.status}'),
+              Text('Estado: ${giftCard.displayStatus}'),
             ],
           ),
           actions: [
@@ -5733,7 +5807,7 @@ class GiftCardHistoryPage extends StatelessWidget {
         builder: (context, setLocalState) {
           final statuses = <String>{
             'Todos',
-            ...giftCards.map((giftCard) => giftCard.status),
+            ...giftCards.map((giftCard) => giftCard.displayStatus),
           }.toList();
 
           final filteredGiftCards = giftCards.where((giftCard) {
@@ -5742,7 +5816,8 @@ class GiftCardHistoryPage extends StatelessWidget {
             );
 
             final matchesStatus =
-                selectedStatus == 'Todos' || giftCard.status == selectedStatus;
+                selectedStatus == 'Todos' ||
+                giftCard.displayStatus == selectedStatus;
 
             return matchesSearch && matchesStatus;
           }).toList();
@@ -5824,11 +5899,11 @@ class GiftCardHistoryPage extends StatelessWidget {
                               },
                               leading: CircleAvatar(
                                 backgroundColor: _statusBackgroundColor(
-                                  giftCard.status,
+                                  giftCard.displayStatus,
                                 ),
                                 child: Icon(
                                   Icons.card_giftcard_rounded,
-                                  color: _statusColor(giftCard.status),
+                                  color: _statusColor(giftCard.displayStatus),
                                 ),
                               ),
                               title: Text(
@@ -5843,12 +5918,12 @@ class GiftCardHistoryPage extends StatelessWidget {
                               ),
                               isThreeLine: true,
                               trailing: Chip(
-                                label: Text(giftCard.status),
+                                label: Text(giftCard.displayStatus),
                                 backgroundColor: _statusBackgroundColor(
-                                  giftCard.status,
+                                  giftCard.displayStatus,
                                 ),
                                 labelStyle: TextStyle(
-                                  color: _statusColor(giftCard.status),
+                                  color: _statusColor(giftCard.displayStatus),
                                   fontSize: 12,
                                 ),
                               ),
@@ -6075,6 +6150,11 @@ class _UsageHistoryPageState extends State<UsageHistoryPage> {
           ? originalAmount - usedAmount
           : _parseAmount(giftCardData['remainingAmount']);
 
+      final rawExpirationValue = giftCardData['expirationDate'];
+      final rawExpirationDate = rawExpirationValue is Timestamp
+          ? rawExpirationValue.toDate()
+          : null;
+
       await showUsageReceipt(
         context: context,
         code: code,
@@ -6082,7 +6162,10 @@ class _UsageHistoryPageState extends State<UsageHistoryPage> {
         originalAmount: originalAmount.toStringAsFixed(0),
         usedAmount: usedAmount.toStringAsFixed(0),
         remainingAmount: remainingAmount.toStringAsFixed(0),
-        status: giftCardData['status']?.toString() ?? 'Activa',
+        status: effectiveGiftCardStatus(
+          giftCardData['status']?.toString() ?? 'Activa',
+          rawExpirationDate,
+        ),
       );
     } catch (error, stackTrace) {
       debugPrint('ERROR AL GUARDAR GIFT CARD: $error');
