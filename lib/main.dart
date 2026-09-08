@@ -4305,20 +4305,6 @@ class GiftCardVisual extends StatelessWidget {
                                 fontSize: 25,
                               ),
                             ),
-
-                            // La dedicatoria personalizada del usuario
-                            // aparece muy suavemente en el fondo.
-                            Positioned(
-                              left: width * 0.15,
-                              top: cardHeight * 0.38,
-                              child: const _WatermarkHeart(size: 38),
-                            ),
-
-                            Positioned(
-                              right: width * 0.12,
-                              top: cardHeight * 0.40,
-                              child: const _WatermarkHeart(size: 42),
-                            ),
                           ],
                         ),
                       ),
