@@ -1310,6 +1310,37 @@ class LocalHomePage extends StatelessWidget {
     );
   }
 
+  /// Runs [operation] behind a blocking progress indicator.
+  ///
+  /// Looking a card up needs a round trip to Firestore, which can take several
+  /// seconds on a weak connection. Without this the app sits on the previous
+  /// screen with no feedback at all, which reads as a freeze rather than a
+  /// slow network.
+  Future<T> _runWithProgress<T>(
+    BuildContext context,
+    Future<T> operation,
+  ) async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        useRootNavigator: true,
+        builder: (_) => const PopScope(
+          canPop: false,
+          child: Center(child: CircularProgressIndicator(color: greenColor)),
+        ),
+      ),
+    );
+
+    try {
+      return await operation;
+    } finally {
+      navigator.pop();
+    }
+  }
+
   Future<void> _showManualCodeDialog(
     BuildContext context, {
     String? initialCode,
@@ -1350,12 +1381,24 @@ class LocalHomePage extends StatelessWidget {
 
     codeController.dispose();
 
-    if (code == null || code.isEmpty) {
+    if (code == null || code.isEmpty || !context.mounted) {
       return;
     }
 
     try {
-      final giftCardData = await GiftCardService().findGiftCardByCode(code);
+      final service = GiftCardService();
+      final normalizedCode = code.trim().toUpperCase();
+
+      // The card and its usages are independent reads keyed by the same code,
+      // so they go out together instead of one after the other. On a slow
+      // connection that is the difference between one round trip and two.
+      final (giftCardData, usageRecords) = await _runWithProgress(
+        context,
+        (
+          service.findGiftCardByCode(normalizedCode),
+          service.loadGiftCardUsages(normalizedCode),
+        ).wait,
+      );
 
       if (!context.mounted) {
         return;
@@ -1370,9 +1413,6 @@ class LocalHomePage extends StatelessWidget {
         return;
       }
 
-      final usageRecords = await GiftCardService().loadGiftCardUsages(
-        giftCardData['code']?.toString() ?? '',
-      );
       final expirationValue = giftCardData['expirationDate'];
 
       final expirationDate = expirationValue is Timestamp

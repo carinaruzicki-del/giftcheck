@@ -186,9 +186,23 @@ class GiftCardService {
   }
 
   Future<Map<String, dynamic>?> findGiftCardByCode(String code) async {
-    final snapshot = await _firestore
-        .collection('giftCards')
-        .where('code', isEqualTo: code.trim().toUpperCase())
+    final normalizedCode = code.trim().toUpperCase();
+
+    if (normalizedCode.isEmpty) {
+      return null;
+    }
+
+    // Gift cards are written with the code as the document id (see
+    // saveGiftCard), so a direct lookup resolves without the query round trip.
+    final document = await _giftCardsCollection.doc(normalizedCode).get();
+
+    if (document.exists) {
+      return document.data();
+    }
+
+    // Fall back to a query for any card that predates that convention.
+    final snapshot = await _giftCardsCollection
+        .where('code', isEqualTo: normalizedCode)
         .limit(1)
         .get();
 

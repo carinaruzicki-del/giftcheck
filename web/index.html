@@ -31,6 +31,60 @@
 
   <title>GiftCheck</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    iOS fix: force inline playback for the camera preview.
+
+    On iOS (Safari and standalone home-screen web apps), a <video> element that
+    starts playing without the `playsinline` attribute is taken over by the
+    native full-screen media player. `mobile_scanner` creates its preview
+    element without that attribute, so on an iPhone the camera feed opens
+    full-screen in the system player instead of inside the app, and the QR code
+    is never scanned.
+
+    `play()` is patched rather than the element itself, because the preview is
+    created detached from the document and starts playing before Flutter mounts
+    it, so a MutationObserver alone would react too late. The observer below is
+    only a safety net for elements that are inserted already playing.
+
+    See https://github.com/juliansteenbakker/mobile_scanner (web preview is
+    created in lib/src/web/mobile_scanner_web.dart, `_createVideoElement`).
+  -->
+  <script>
+    (function () {
+      function forceInline(el) {
+        if (!el || el.tagName !== 'VIDEO') return;
+        el.playsInline = true;
+        el.setAttribute('playsinline', '');
+        el.setAttribute('webkit-playsinline', '');
+        // iOS only allows programmatic inline playback for muted media.
+        // The scanner requests a video-only stream, so nothing is lost.
+        el.muted = true;
+        el.setAttribute('muted', '');
+        el.controls = false;
+      }
+
+      var play = HTMLMediaElement.prototype.play;
+      HTMLMediaElement.prototype.play = function () {
+        forceInline(this);
+        return play.apply(this, arguments);
+      };
+
+      new MutationObserver(function (mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+          var added = mutations[i].addedNodes;
+          for (var j = 0; j < added.length; j++) {
+            var node = added[j];
+            if (node.nodeType !== 1) continue;
+            forceInline(node);
+            var nested = node.querySelectorAll && node.querySelectorAll('video');
+            if (nested) for (var k = 0; k < nested.length; k++) forceInline(nested[k]);
+          }
+        }
+      }).observe(document.documentElement, { childList: true, subtree: true });
+    })();
+  </script>
+
 </head>
 <body>
   <!--
