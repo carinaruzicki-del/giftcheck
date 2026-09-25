@@ -4261,424 +4261,145 @@ class GiftCardVisual extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final expirationText = giftCard.expirationDate == null
-        ? null
-        : formatDate(giftCard.expirationDate!);
-
-    final recipientName = giftCard.recipientName;
-    final senderName = giftCard.senderName;
-
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth;
-
-        /*
-         * La Gift Card ocupa todo el ancho disponible.
-         *
-         * El aspect ratio está pensado para que sea horizontal,
-         * pero un poco más alta que una tarjeta tradicional,
-         * dejando aire entre logo, título, QR e información.
-         */
-        final cardHeight = width / 0.92;
-
-        return SizedBox(
-          width: double.infinity,
-          height: cardHeight,
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFFEFD),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFC9A45C), width: 1.4),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
-                  blurRadius: 18,
-                  offset: const Offset(0, 7),
+        final width = math.min(535.0, constraints.maxWidth);
+        return Center(
+          child: SizedBox(
+            width: width,
+            height: width * 785 / 535,
+            child: FittedBox(
+              fit: BoxFit.contain,
+              child: Container(
+                width: 535,
+                height: 785,
+                padding: const EdgeInsets.fromLTRB(50, 26, 50, 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.black, width: 3),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x22000000), blurRadius: 20),
+                  ],
                 ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(17),
-              child: Stack(
-                children: [
-                  // =========================================================
-                  // FONDO DECORATIVO
-                  // =========================================================
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: Opacity(
-                        opacity: 0.20,
-                        child: Stack(
-                          children: [
-                            Positioned(
-                              left: width * 0.035,
-                              top: cardHeight * 0.16,
-                              child: const _WatermarkText(
-                                text: 'Para vos',
-                                fontSize: 30,
-                              ),
-                            ),
-
-                            Positioned(
-                              right: width * 0.035,
-                              top: cardHeight * 0.18,
-                              child: const _WatermarkText(
-                                text: 'Te lo merecés',
-                                fontSize: 27,
-                              ),
-                            ),
-
-                            Positioned(
-                              left: width * 0.025,
-                              bottom: cardHeight * 0.20,
-                              child: const _WatermarkText(
-                                text: 'Disfrutá\ntu momento',
-                                fontSize: 25,
-                              ),
-                            ),
-
-                            Positioned(
-                              right: width * 0.025,
-                              bottom: cardHeight * 0.18,
-                              child: const _WatermarkText(
-                                text: 'Un regalo\npara vos',
-                                fontSize: 25,
-                              ),
-                            ),
-                          ],
-                        ),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: 245,
+                      height: 30,
+                      child: Image.asset(
+                        'assets/el-cielo-logos.png',
+                        fit: BoxFit.contain,
                       ),
                     ),
-                  ),
-
-                  // =========================================================
-                  // CONTENIDO PRINCIPAL
-                  // =========================================================
-                  Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: width * 0.035,
-                      vertical: cardHeight * 0.045,
-                    ),
-                    child: Column(
-                      children: [
-                        // ---------------------------------------------------
-                        // LOGO
-                        // ---------------------------------------------------
-                        SizedBox(
-                          width: width * 0.72,
-                          height: cardHeight * 0.10,
-                          child: Image.asset(
-                            'assets/el-cielo-logos.png',
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-
-                        SizedBox(height: cardHeight * 0.045),
-                        // ---------------------------------------------------
-                        // GIFT CARD
-                        // ---------------------------------------------------
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Stack(
+                    const SizedBox(height: 18),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('GIFT', style: GoogleFonts.montserrat(
+                            color: Colors.black,
+                            fontSize: 68,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -1.5,
+                          )),
+                          const SizedBox(width: 6),
+                          Stack(
                             alignment: Alignment.center,
                             children: [
-                              // Contorno negro
-                              RichText(
-                                text: TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: 'GIFT',
-                                      style: GoogleFonts.montserrat(
-                                        foreground: Paint()
-                                          ..style = PaintingStyle.stroke
-                                          ..strokeWidth = 2
-                                          ..color = Colors.black,
-                                        fontSize: 34,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: -1.5,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: ' CARD',
-                                      style: GoogleFonts.montserrat(
-                                        foreground: Paint()
-                                          ..style = PaintingStyle.stroke
-                                          ..strokeWidth = 2
-                                          ..color = Colors.black,
-                                        fontSize: 34,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: -1.5,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              // Relleno interior
-                              RichText(
-                                text: TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: 'GIFT',
-                                      style: GoogleFonts.montserrat(
-                                        color: Colors.black,
-                                        fontSize: 34,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: -1.5,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: ' CARD',
-                                      style: GoogleFonts.montserrat(
-                                        color: Colors.white,
-                                        fontSize: 34,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: -1.5,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                              Text('CARD', style: GoogleFonts.montserrat(
+                                foreground: Paint()
+                                  ..style = PaintingStyle.stroke
+                                  ..strokeWidth = 2
+                                  ..color = Colors.black,
+                                fontSize: 68,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -1.5,
+                              )),
+                              Text('CARD', style: GoogleFonts.montserrat(
+                                color: Colors.white,
+                                fontSize: 68,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -1.5,
+                              )),
                             ],
                           ),
-                        ),
-
-                        SizedBox(height: cardHeight * 0.018),
-
-                        // ---------------------------------------------------
-                        // SUBTÍTULO
-                        // ---------------------------------------------------
-                        const Text(
-                          'VÁLIDA EN TODOS NUESTROS LOCALES',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Color(0xFF777777),
-                            fontSize: 9,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 2.1,
-                          ),
-                        ),
-
-                        SizedBox(height: cardHeight * 0.035),
-
-                        // ---------------------------------------------------
-                        // ZONA CENTRAL
-                        // Fila superior: VALOR | QR | PARA (QR centrado)
-                        // Debajo, a todo el ancho: CÓDIGO, DE PARTE DE,
-                        // DEDICATORIA y, al final, VÁLIDA HASTA
-                        // ---------------------------------------------------
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // FILA SUPERIOR: VALOR - QR - PARA
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Text(
-                                          'VALOR:',
-                                          textAlign: TextAlign.center,
-                                          style: giftCardLabelTextStyle(),
-                                        ),
-                                        const SizedBox(height: 10),
-                                        FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          child: Text(
-                                            money(giftCard.amount),
-                                            style: const TextStyle(
-                                              color: Colors.black,
-                                              fontSize: 26,
-                                              fontWeight: FontWeight.w800,
-                                              letterSpacing: -0.5,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  SizedBox(width: width * 0.02),
-
-                                  // QR: al usar el mismo flex a los dos
-                                  // lados (VALOR y PARA), queda siempre
-                                  // matemáticamente centrado.
-                                  Container(
-                                    padding: const EdgeInsets.all(9),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: const Color(0xFFC9A45C),
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: QrImageView(
-                                      data: qrDataForGiftCard(giftCard),
-                                      size: width * 0.27,
-                                      backgroundColor: Colors.white,
-                                      padding: EdgeInsets.zero,
-                                    ),
-                                  ),
-
-                                  SizedBox(width: width * 0.02),
-
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Text(
-                                          'PARA:',
-                                          textAlign: TextAlign.center,
-                                          style: giftCardLabelTextStyle(),
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Text(
-                                          recipientName,
-                                          textAlign: TextAlign.center,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: giftCardValueTextStyle(),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-
-                              SizedBox(height: cardHeight * 0.02),
-
-                              // CÓDIGO, debajo del QR
-                              const Text(
-                                'CÓDIGO',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Color(0xFFC9A45C),
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 2,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                giftCard.code,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Colors.black,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 2,
-                                ),
-                              ),
-
-                              const Spacer(),
-
-                              // DE PARTE DE — corazón con borde dorado
-                              // (favorite_border) + mismo formato que PARA
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  const Icon(
-                                    Icons.favorite_border,
-                                    color: Color(0xFFC9A45C),
-                                    size: 14,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Flexible(
-                                    child: RichText(
-                                      textAlign: TextAlign.center,
-                                      text: TextSpan(
-                                        children: [
-                                          TextSpan(
-                                            text: 'DE PARTE DE: ',
-                                            style: giftCardLabelTextStyle(),
-                                          ),
-                                          TextSpan(
-                                            text: senderName,
-                                            style: giftCardValueTextStyle(),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-
-                              // DEDICATORIA — corazón relleno en dorado
-                              // (favorite) + mismo formato que PARA
-                              if (giftCard.dedication.isNotEmpty) ...[
-                                SizedBox(height: cardHeight * 0.035),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    const Icon(
-                                      Icons.favorite,
-                                      color: Color(0xFFC9A45C),
-                                      size: 14,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Flexible(
-                                      child: Text(
-                                        giftCard.dedication,
-                                        textAlign: TextAlign.center,
-                                        style: giftCardValueTextStyle(),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-
-                              SizedBox(height: cardHeight * 0.02),
-
-                              // VÁLIDA HASTA — centrada, pegada al borde
-                              // inferior de la tarjeta
-                              if (expirationText != null)
-                                Text(
-                                  'VÁLIDA HASTA: $expirationText',
-                                  textAlign: TextAlign.center,
-                                  style: GoogleFonts.montserrat(
-                                    color: const Color(0xFF786B60),
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.8,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  // =========================================================
-                  // DETALLES DORADOS DE LAS ESQUINAS
-                  // =========================================================
-                  const Positioned(top: 7, left: 7, child: _CornerDecoration()),
-
-                  const Positioned(
-                    top: 7,
-                    right: 7,
-                    child: _CornerDecoration(flipX: true),
-                  ),
-
-                  const Positioned(
-                    bottom: 7,
-                    left: 7,
-                    child: _CornerDecoration(flipY: true),
-                  ),
-
-                  const Positioned(
-                    bottom: 7,
-                    right: 7,
-                    child: _CornerDecoration(flipX: true, flipY: true),
-                  ),
-                ],
+                    const SizedBox(height: 42),
+                    SizedBox(
+                      width: 250,
+                      height: 264,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Container(
+                            width: 190,
+                            height: 190,
+                            color: const Color(0xFFF5F6F7),
+                            padding: const EdgeInsets.all(6),
+                            child: QrImageView(
+                              data: qrDataForGiftCard(giftCard),
+                              size: 178,
+                              backgroundColor: Colors.white,
+                              padding: const EdgeInsets.all(7),
+                            ),
+                          ),
+                          const Positioned(top: 0, left: 0,
+                            child: _QrCorner()),
+                          const Positioned(top: 0, right: 0,
+                            child: _QrCorner(flipX: true)),
+                          const Positioned(bottom: 0, left: 0,
+                            child: _QrCorner(flipY: true)),
+                          const Positioned(bottom: 0, right: 0,
+                            child: _QrCorner(flipX: true, flipY: true)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    _GiftCardLine(label: 'PARA:', value: giftCard.recipientName),
+                    const SizedBox(height: 14),
+                    _GiftCardLine(label: 'DE:', value: giftCard.senderName),
+                    const SizedBox(height: 20),
+                    const Spacer(),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          const Text('\$', style: TextStyle(
+                            color: Colors.black,
+                            fontSize: 30,
+                            fontWeight: FontWeight.w800,
+                          )),
+                          const SizedBox(width: 10),
+                          Text(
+                            money(giftCard.amount).replaceFirst('\$', '').trim(),
+                            maxLines: 1,
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 23,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'CÓDIGO ${giftCard.code}',
+                      style: GoogleFonts.montserrat(
+                        color: Colors.black,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -4686,6 +4407,50 @@ class GiftCardVisual extends StatelessWidget {
       },
     );
   }
+}
+
+class _QrCorner extends StatelessWidget {
+  const _QrCorner({this.flipX = false, this.flipY = false});
+  final bool flipX;
+  final bool flipY;
+
+  @override
+  Widget build(BuildContext context) => Transform.flip(
+    flipX: flipX,
+    flipY: flipY,
+    child: Container(
+      width: 92,
+      height: 100,
+      decoration: const BoxDecoration(
+        border: Border(
+          left: BorderSide(color: Colors.black, width: 14),
+          top: BorderSide(color: Colors.black, width: 14),
+        ),
+      ),
+    ),
+  );
+}
+
+class _GiftCardLine extends StatelessWidget {
+  const _GiftCardLine({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 250,
+    child: Column(children: [
+      Text(label, style: const TextStyle(fontSize: 16,
+          fontWeight: FontWeight.w800)),
+      SizedBox(
+        height: 30,
+        child: Center(child: Text(value, maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 17))),
+      ),
+      const Divider(color: Colors.black, thickness: 1),
+    ]),
+  );
 }
 
 // ============================================================================
