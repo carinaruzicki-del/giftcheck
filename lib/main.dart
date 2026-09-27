@@ -216,11 +216,13 @@ Future<void> showUsageReceipt({
   required String usedAmount,
   required String remainingAmount,
   required String status,
-  VoidCallback? onBlock,
+List<Map<String, dynamic>>? usageRecords,
+VoidCallback? onBlock,
   VoidCallback? onCancel,
   VoidCallback? onReactivate,
 }) async {
-  final usages = await GiftCardService().loadGiftCardUsages(code);
+  final usages =
+    usageRecords ?? await GiftCardService().loadGiftCardUsages(code);
 
   final receiptText = StringBuffer();
 
@@ -1766,6 +1768,15 @@ final newRemainingAmount =
 
 final newStatus =
     usageResult['status']?.toString() ?? 'Parcialmente usada';
+    final updatedUsageRecords = [
+  {
+    'giftCardCode': code,
+    'amountUsed': amountUsed.toStringAsFixed(0),
+    'username': profile.username,
+    'usedAt': DateTime.now(),
+  },
+  ...usages,
+];
 
       await showUsageReceipt(
         context: context,
@@ -1775,6 +1786,7 @@ final newStatus =
         usedAmount: newUsedAmount.toStringAsFixed(0),
         remainingAmount: newRemainingAmount.toStringAsFixed(0),
         status: newStatus,
+        usageRecords: updatedUsageRecords,
       );
     } catch (error) {
       if (!context.mounted) {
