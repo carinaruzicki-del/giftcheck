@@ -1528,7 +1528,7 @@ class LocalHomePage extends StatelessWidget {
                   onPressed: () {
                     Navigator.pop(dialogContext);
 
-                    _showUsageDialog(context, giftCardData);
+                    _showUsageDialog(context, giftCardData, usageRecords);
                   },
                   child: const Text('Registrar uso'),
                 ),
@@ -1567,13 +1567,13 @@ class LocalHomePage extends StatelessWidget {
   }
 
   Future<void> _showUsageDialog(
-    BuildContext context,
-    Map<String, dynamic> giftCardData,
-  ) async {
+  BuildContext context,
+  Map<String, dynamic> giftCardData,
+  List<Map<String, dynamic>> usages,
+) async {
     final code = giftCardData['code']?.toString() ?? '';
     final originalAmount = _amountToNumber(giftCardData['amount']);
 
-    final usages = await GiftCardService().loadGiftCardUsages(code);
 
     final usedAmount = usages.fold<double>(0, (total, usage) {
       return total + _amountToNumber(usage['amountUsed']);
@@ -1747,7 +1747,7 @@ class LocalHomePage extends StatelessWidget {
     }
 
     try {
-      await GiftCardService().saveGiftCardUsage(
+      final usageResult = await GiftCardService().saveGiftCardUsage(
         giftCardCode: code,
         amountUsed: amountUsed.toStringAsFixed(0),
         username: profile.username,
@@ -1758,13 +1758,14 @@ class LocalHomePage extends StatelessWidget {
         return;
       }
 
-      final newUsedAmount = usedAmount + amountUsed;
+      final newUsedAmount =
+    (usageResult['usedAmount'] as num).toDouble();
 
-      final newRemainingAmount = remainingAmount - amountUsed;
+final newRemainingAmount =
+    (usageResult['remainingAmount'] as num).toDouble();
 
-      final newStatus = newRemainingAmount <= 0
-          ? 'Canjeada'
-          : 'Parcialmente usada';
+final newStatus =
+    usageResult['status']?.toString() ?? 'Parcialmente usada';
 
       await showUsageReceipt(
         context: context,

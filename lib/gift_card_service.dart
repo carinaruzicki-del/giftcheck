@@ -213,7 +213,7 @@ class GiftCardService {
     return snapshot.docs.first.data();
   }
 
-  Future<void> saveGiftCardUsage({
+  Future<Map<String, dynamic>> saveGiftCardUsage({
     required String giftCardCode,
     required String amountUsed,
     required String username,
@@ -234,24 +234,48 @@ class GiftCardService {
       throw Exception('El importe utilizado no es válido.');
     }
 
-    final giftCardSnapshot = await _firestore
-        .collection('giftCards')
-        .where('code', isEqualTo: code)
-        .limit(1)
-        .get();
-
-    if (giftCardSnapshot.docs.isEmpty) {
-      throw Exception('No encontramos la Gift Card.');
-    }
-
-    final giftCardReference = giftCardSnapshot.docs.first.reference;
+    final giftCardReference = _giftCardsCollection.doc(code);
 
     final usageReference = _firestore.collection('giftCardUsages').doc();
 
-    await _firestore.runTransaction((transaction) async {
+    return await _firestore.runTransaction<Map<String, dynamic>>((transaction) async {
       final currentSnapshot = await transaction.get(giftCardReference);
-
+if (!currentSnapshot.exists) {
+  throw Exception('No encontramos la Gift Card.');
+}
       final data = currentSnapshot.data() ?? {};
+
+      final currentStatus = data['status']?.toString() ?? 'Activa';
+
+if (currentStatus == 'Bloqueada') {
+  throw Exception('La Gift Card está bloqueada.');
+}
+
+if (currentStatus == 'Anulada') {
+  throw Exception('La Gift Card está anulada.');
+}
+
+if (currentStatus == 'Canjeada') {
+  throw Exception('La Gift Card ya fue canjeada.');
+}
+
+final expirationValue = data['expirationDate'];
+
+if (expirationValue is Timestamp) {
+  final expirationDate = expirationValue.toDate();
+
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final expirationDay = DateTime(
+    expirationDate.year,
+    expirationDate.month,
+    expirationDate.day,
+  );
+
+  if (today.isAfter(expirationDay)) {
+    throw Exception('La Gift Card está vencida.');
+  }
+}
 
       final originalAmount = parseAmount(data['amount']);
 
@@ -288,6 +312,11 @@ class GiftCardService {
         'accountUid': accountUid,
         'usedAt': FieldValue.serverTimestamp(),
       });
+      return {
+  'usedAmount': newUsedAmount,
+  'remainingAmount': newRemainingAmount,
+  'status': newStatus,
+};
     });
   }
 
