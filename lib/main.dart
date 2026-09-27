@@ -1394,13 +1394,13 @@ class LocalHomePage extends StatelessWidget {
       // The card and its usages are independent reads keyed by the same code,
       // so they go out together instead of one after the other. On a slow
       // connection that is the difference between one round trip and two.
-      final (giftCardData, usageRecords) = await _runWithProgress(
-        context,
-        (
-          service.findGiftCardByCode(normalizedCode),
-          service.loadGiftCardUsages(normalizedCode),
-        ).wait,
-      );
+      final usageRecordsFuture =
+    service.loadGiftCardUsages(normalizedCode);
+
+final giftCardData = await _runWithProgress(
+  context,
+  service.findGiftCardByCode(normalizedCode),
+);
 
       if (!context.mounted) {
         return;
@@ -1497,27 +1497,42 @@ class LocalHomePage extends StatelessWidget {
                         style: const TextStyle(color: Colors.red),
                       ),
                     ],
-                    if (usageRecords.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Detalle de usos',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
+                    FutureBuilder<List<Map<String, dynamic>>>(
+  future: usageRecordsFuture,
+  builder: (context, snapshot) {
+    final usageRecords =
+        snapshot.data ?? const <Map<String, dynamic>>[];
 
-                      ...usageRecords.map((usage) {
-                        final dateText = _formatUsageDate(usage['usedAt']);
+    if (usageRecords.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Text(
-                            '${money(usage['amountUsed'] ?? '0')}'
-                            ' · ${usage['username'] ?? ''}'
-                            ' · $dateText',
-                          ),
-                        );
-                      }),
-                    ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        const Text(
+          'Detalle de usos',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+
+        ...usageRecords.map((usage) {
+          final dateText = _formatUsageDate(usage['usedAt']);
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              '${money(usage['amountUsed'] ?? '0')}'
+              ' · ${usage['username'] ?? ''}'
+              ' · $dateText',
+            ),
+          );
+        }),
+      ],
+    );
+  },
+),
                   ],
                 ),
               ),
@@ -1530,7 +1545,7 @@ class LocalHomePage extends StatelessWidget {
                   onPressed: () {
                     Navigator.pop(dialogContext);
 
-                    _showUsageDialog(context, giftCardData, usageRecords);
+                    _showUsageDialog(context, giftCardData, usageRecordsFuture);
                   },
                   child: const Text('Registrar uso'),
                 ),
@@ -1571,11 +1586,11 @@ class LocalHomePage extends StatelessWidget {
   Future<void> _showUsageDialog(
   BuildContext context,
   Map<String, dynamic> giftCardData,
-  List<Map<String, dynamic>> usages,
+  Future<List<Map<String, dynamic>>> usagesFuture,
 ) async {
     final code = giftCardData['code']?.toString() ?? '';
     final originalAmount = _amountToNumber(giftCardData['amount']);
-
+final usages = await usagesFuture;
 
     final usedAmount = usages.fold<double>(0, (total, usage) {
       return total + _amountToNumber(usage['amountUsed']);
