@@ -1,8 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math';
+import 'voucher_validation.dart';
 
 class GiftCardService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  GiftCardService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
   String _createShareToken() {
     const characters =
         'abcdefghijklmnopqrstuvwxyz'
@@ -52,7 +56,11 @@ class GiftCardService {
 
       final lastSequence = data?['lastSequence'] as int? ?? 1;
 
-      final nextSequence = lastSequence + 1;
+      var nextSequence = lastSequence + 1;
+      // Reserve VA..VZ for vouchers even when Gift Card numbering grows.
+      if (isVoucherCode(_codeFromSequence(nextSequence))) {
+        nextSequence = 598 * 999999 + 1; // WA000001 follows VZ999999.
+      }
 
       final nextCode = _codeFromSequence(nextSequence);
 
@@ -62,6 +70,83 @@ class GiftCardService {
       }, SetOptions(merge: true));
 
       return nextCode;
+    });
+  }
+
+  /// Reserve a short code atomically for both roles. Codes are never reused.
+  Future<String> reserveNextVoucherCode() async {
+    final reference = _firestore.collection('counters').doc('vouchers');
+    // On the first concurrent creation, rules may see the other writer's
+    // counter before Firestore reports a transaction conflict. Retry only
+    // when that counter actually advanced; never mask a permission failure.
+    var observedSequence = 0;
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await _firestore.runTransaction<String>((transaction) async {
+          final snapshot = await transaction.get(reference);
+          observedSequence = snapshot.data()?['lastSequence'] as int? ?? 0;
+          final next = observedSequence + 1;
+          final code = voucherCodeFromSequence(next);
+          transaction.set(reference, {
+            'lastSequence': next,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          return code;
+        });
+      } on FirebaseException catch (error) {
+        if (attempt >= 4 ||
+            !(error.code == 'permission-denied' || error.code == 'aborted')) {
+          rethrow;
+        }
+        final latest = await reference.get(const GetOptions(source: Source.server));
+        final current = latest.data()?['lastSequence'] as int? ?? 0;
+        if (current <= observedSequence) rethrow;
+      }
+    }
+  }
+
+  Future<void> saveVoucher({
+    required String code,
+    required String amount,
+    required DateTime expirationDate,
+    required String creatorUid,
+  }) async {
+    final amountError = validateVoucherAmount(amount);
+    final dateError = validateVoucherExpiration(expirationDate);
+    if (amountError != null || dateError != null) {
+      throw ArgumentError(amountError ?? dateError);
+    }
+    if (!RegExp(r'^V[A-Z][0-9]{6}$').hasMatch(code)) {
+      throw ArgumentError('Código de voucher inválido.');
+    }
+    final reference = _giftCardsCollection.doc(code);
+    final normalizedAmount = int.parse(amount).toString();
+    final expiration = voucherEndOfDay(expirationDate);
+    await _firestore.runTransaction((transaction) async {
+      final existing = await transaction.get(reference);
+      if (existing.exists) {
+        final data = existing.data()!;
+        if (data['type'] == 'voucher' && data['creatorUid'] == creatorUid &&
+            data['amount'] == normalizedAmount &&
+            data['expirationDate'] == Timestamp.fromDate(expiration)) {
+          return; // The previous attempt committed before its response was lost.
+        }
+        throw StateError('El código ya existe. Volvé a crear el voucher.');
+      }
+      transaction.set(reference, {
+        'type': 'voucher',
+        'code': code,
+        'amount': normalizedAmount,
+        'expirationDate': Timestamp.fromDate(expiration),
+        'dedication': '',
+        'senderName': '',
+        'recipientName': '',
+        'status': 'Activa',
+        'usedAmount': '0',
+        'remainingAmount': normalizedAmount,
+        'creatorUid': creatorUid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
     });
   }
 
@@ -173,6 +258,8 @@ class GiftCardService {
             }
 
             return {
+              'usedAmount': data['usedAmount'],
+              'remainingAmount': data['remainingAmount'],
               'code': data['code'] as String? ?? document.id,
               'amount': data['amount'] as String? ?? '',
               'expirationDate': expirationDate,
@@ -299,6 +386,7 @@ if (expirationValue is Timestamp) {
           : 'Parcialmente usada';
 
       transaction.update(giftCardReference, {
+        if (data['type'] == 'voucher') 'lastUsageId': usageReference.id,
         'usedAmount': newUsedAmount.toStringAsFixed(0),
         'remainingAmount': newRemainingAmount.toStringAsFixed(0),
         'status': newStatus,

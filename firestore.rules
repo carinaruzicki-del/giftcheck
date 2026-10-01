@@ -9,6 +9,65 @@ function isAdministrator() {
     && get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.role == 'administrator';
 }
 
+
+    function canUseVouchers() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/accounts/$(request.auth.uid))
+        && get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.role in ['administrator', 'local']
+        && get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.get('active', true) == true;
+    }
+
+    function isVoucher(data) {
+      return data.get('type', '') == 'voucher';
+    }
+
+    function validVoucherCreate(id) {
+      let d = request.resource.data;
+      return canUseVouchers()
+        && d.keys().hasOnly(['type', 'code', 'amount', 'expirationDate',
+          'dedication', 'senderName', 'recipientName', 'status', 'usedAmount',
+          'remainingAmount', 'creatorUid', 'createdAt'])
+        && d.type == 'voucher'
+        && d.code == id && id.matches('^V[A-Z][0-9]{6}$')
+        && d.amount is string && d.amount.matches('^[1-9][0-9]{0,11}$')
+        && d.expirationDate is timestamp && d.expirationDate >= request.time
+        && d.dedication == '' && d.senderName == '' && d.recipientName == ''
+        && d.status == 'Activa' && d.usedAmount == '0'
+        && d.remainingAmount == d.amount
+        && d.creatorUid == request.auth.uid && d.createdAt == request.time;
+    }
+
+    function validVoucherUse(id) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let usage = getAfter(/databases/$(database)/documents/giftCardUsages/$(after.lastUsageId)).data;
+      return canUseVouchers()
+        && before.status in ['Activa', 'Parcialmente usada']
+        && before.expirationDate >= request.time
+        && after.diff(before).affectedKeys().hasOnly([
+          'usedAmount', 'remainingAmount', 'status', 'updatedAt', 'lastUsageId'])
+        && after.lastUsageId is string
+        && !exists(/databases/$(database)/documents/giftCardUsages/$(after.lastUsageId))
+        && usage.giftCardCode == id && usage.accountUid == request.auth.uid
+        && usage.usedAt == request.time
+        && usage.amountUsed is string && usage.amountUsed.matches('^[1-9][0-9]{0,11}$')
+        && after.usedAmount is string && after.usedAmount.matches('^[0-9]{1,12}$')
+        && after.remainingAmount is string && after.remainingAmount.matches('^[0-9]{1,12}$')
+        && int(after.usedAmount) == int(before.usedAmount) + int(usage.amountUsed)
+        && int(after.remainingAmount) == int(before.remainingAmount) - int(usage.amountUsed)
+        && int(after.remainingAmount) >= 0
+        && int(after.usedAmount) + int(after.remainingAmount) == int(before.amount)
+        && after.status == (int(after.remainingAmount) == 0 ? 'Canjeada' : 'Parcialmente usada')
+        && after.updatedAt == request.time;
+    }
+
+    function validVoucherStatusChange() {
+      return isAdministrator()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.status in ['Activa', 'Bloqueada', 'Anulada']
+        && request.resource.data.updatedAt == request.time;
+    }
+
     
 
  match /accounts/{userId} {
@@ -53,9 +112,13 @@ match /locals/{localId} {
     match /giftCards/{giftCardId} {
   allow read: if request.auth != null;
 
-  allow create, delete: if isAdministrator();
+  allow create: if (isVoucher(request.resource.data) && validVoucherCreate(giftCardId))
+    || (!isVoucher(request.resource.data) && !giftCardId.matches('^V-.*') && !giftCardId.matches('^V[A-Z][0-9]{6}$') && isAdministrator());
+  allow delete: if isAdministrator();
 
-  allow update: if isAdministrator()
+  allow update: if (isVoucher(resource.data)
+      && (validVoucherUse(giftCardId) || validVoucherStatusChange()))
+    || (!isVoucher(resource.data) && !isVoucher(request.resource.data) && (isAdministrator()
     || (
       request.auth != null
       && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -71,7 +134,7 @@ match /locals/{localId} {
         'Parcialmente usada',
         'Canjeada'
       ]
-    );
+    )));
 }
 
     
@@ -99,13 +162,29 @@ match /giftCardUsages/{usageId} {
     && request.resource.data.amountUsed.matches('^[1-9][0-9]*$')
     && request.resource.data.username is string
     && request.resource.data.username.size() > 0
-    && request.resource.data.usedAt == request.time;
+    && request.resource.data.usedAt == request.time
+    && (!(request.resource.data.giftCardCode.matches('^V-.*') || request.resource.data.giftCardCode.matches('^V[A-Z][0-9]{6}$')) || (
+      canUseVouchers()
+      && getAfter(/databases/$(database)/documents/giftCards/$(request.resource.data.giftCardCode)).data.lastUsageId == usageId
+      && getAfter(/databases/$(database)/documents/giftCards/$(request.resource.data.giftCardCode)).data.updatedAt == request.time
+    ));
 
   allow update, delete: if isAdministrator();
 }
 
     match /counters/{counterId} {
-      allow read, write: if isAdministrator();
+      allow read: if isAdministrator() || (counterId == 'vouchers' && canUseVouchers());
+      allow write: if counterId != 'vouchers' && isAdministrator();
+      allow create, update: if counterId == 'vouchers' && canUseVouchers()
+        && request.resource.data.keys().hasOnly(['lastSequence', 'updatedAt'])
+        && request.resource.data.lastSequence is int
+        && request.resource.data.lastSequence > 0
+        && request.resource.data.lastSequence <= 25999974
+        && request.resource.data.updatedAt == request.time
+        && ((!exists(/databases/$(database)/documents/counters/vouchers)
+              && request.resource.data.lastSequence == 1)
+            || (exists(/databases/$(database)/documents/counters/vouchers)
+              && request.resource.data.lastSequence == resource.data.lastSequence + 1));
     }
 
     match /publicEcards/{shareToken} {

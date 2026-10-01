@@ -19,6 +19,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math' as math;
+import 'voucher_validation.dart';
+
+import 'integer_amount.dart';
+
+part 'voucher_pages.dart';
+part 'history_pages.dart';
+part 'expiration_calendar.dart';
 
 const greenColor = Color(0xFF16845A);
 const darkTextColor = Color(0xFF26332B);
@@ -38,8 +45,11 @@ Future<void> main() async {
 // FUNCIONES AUXILIARES
 // ------------------------------------------------------------
 
+String cardLabel(String code) => isVoucherCode(code) ? 'Voucher' : 'Gift Card';
+
 String money(String amount) {
-  return r'$ ' + amount;
+  final display = amount.replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (match) => '${match[1]}.');
+  return '\$ $display';
 }
 
 String formatDate(DateTime date) {
@@ -121,6 +131,15 @@ String effectiveGiftCardStatus(String status, DateTime? expirationDate) {
   return status;
 }
 
+Future<void> showExpiredCardNotice(BuildContext context, {required String code, required DateTime expirationDate}) {
+  return showDialog<void>(context: context, builder: (context) => AlertDialog(
+    icon: const Icon(Icons.event_busy, color: Colors.orange, size: 48),
+    title: Text(isVoucherCode(code) ? 'Voucher vencido' : 'Gift Card vencida'),
+    content: Text('Venció el ${formatDate(expirationDate)}.\nNo se puede utilizar ni registrar nuevos usos.'),
+    actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar'))],
+  ));
+}
+
 InputDecoration appInputDecoration({
   required String label,
   String? hint,
@@ -171,6 +190,9 @@ class GiftCard {
     this.senderName = '',
     this.recipientName = '',
   });
+
+  bool get isVoucher => isVoucherCode(code);
+  String get label => isVoucher ? 'Voucher' : 'Gift Card';
 
   String get displayStatus => effectiveGiftCardStatus(status, expirationDate);
 
@@ -229,7 +251,7 @@ VoidCallback? onBlock,
   receiptText.writeln('GiftCheck');
   receiptText.writeln('Comprobante de uso');
   receiptText.writeln('');
-  receiptText.writeln('Gift Card: $code');
+  receiptText.writeln('${cardLabel(code)}: $code');
   receiptText.writeln('Valor total: ${money(originalAmount)}');
   receiptText.writeln('');
   receiptText.writeln('Usos registrados:');
@@ -273,7 +295,7 @@ VoidCallback? onBlock,
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Gift Card: $code'),
+                  Text('${cardLabel(code)}: $code'),
                   const SizedBox(height: 8),
                   Text('Valor total: ${money(originalAmount)}'),
                   const SizedBox(height: 16),
@@ -1294,7 +1316,9 @@ class _CreateLocalAccountPageState extends State<CreateLocalAccountPage> {
 }
 
 class LocalHomePage extends StatelessWidget {
-  const LocalHomePage({super.key, required this.profile});
+  const LocalHomePage({super.key, required this.profile, this.service});
+
+  final GiftCardService? service;
 
   final AccountProfile profile;
 
@@ -1347,15 +1371,16 @@ class LocalHomePage extends StatelessWidget {
     BuildContext context, {
     String? initialCode,
   }) async {
-    final codeController = TextEditingController(text: initialCode ?? '');
+    var enteredCode = initialCode ?? '';
 
     final code = await showDialog<String>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Consultar Gift Card'),
-          content: TextField(
-            controller: codeController,
+          title: const Text('Consultar Gift Card o voucher'),
+          content: TextFormField(
+            initialValue: enteredCode,
+            onChanged: (value) => enteredCode = value,
             textCapitalization: TextCapitalization.characters,
             decoration: const InputDecoration(
               labelText: 'Código',
@@ -1372,7 +1397,7 @@ class LocalHomePage extends StatelessWidget {
             ),
             FilledButton(
               onPressed: () {
-                Navigator.pop(dialogContext, codeController.text.trim());
+                Navigator.pop(dialogContext, enteredCode.trim());
               },
               child: const Text('Consultar'),
             ),
@@ -1381,21 +1406,19 @@ class LocalHomePage extends StatelessWidget {
       },
     );
 
-    codeController.dispose();
 
     if (code == null || code.isEmpty || !context.mounted) {
       return;
     }
 
     try {
-      final service = GiftCardService();
+      final service = this.service ?? GiftCardService();
       final normalizedCode = code.trim().toUpperCase();
 
-      // The card and its usages are independent reads keyed by the same code,
-      // so they go out together instead of one after the other. On a slow
-      // connection that is the difference between one round trip and two.
-      final usageRecordsFuture =
-    service.loadGiftCardUsages(normalizedCode);
+      if (profile.isAdministrator) {
+        await Navigator.push(context, MaterialPageRoute(builder: (_) => CardHistoryDetailPage(code: normalizedCode)));
+        return;
+      }
 
 final giftCardData = await _runWithProgress(
   context,
@@ -1409,7 +1432,7 @@ final giftCardData = await _runWithProgress(
       if (giftCardData == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No encontramos una Gift Card con ese código.'),
+            content: Text('No encontramos una Gift Card o voucher con ese código.'),
           ),
         );
         return;
@@ -1425,6 +1448,12 @@ final giftCardData = await _runWithProgress(
           ? 'Sin vencimiento'
           : formatDate(expirationDate);
 
+      if (isGiftCardExpired(expirationDate)) {
+        await showExpiredCardNotice(context, code: normalizedCode, expirationDate: expirationDate!);
+        return;
+      }
+      final usageRecordsFuture = service.loadGiftCardUsages(normalizedCode);
+
       final displayStatus = effectiveGiftCardStatus(
         giftCardData['status']?.toString() ?? 'Activa',
         expirationDate,
@@ -1434,7 +1463,7 @@ final giftCardData = await _runWithProgress(
         context: context,
         builder: (dialogContext) {
           return AlertDialog(
-            title: Text('Gift Card ${giftCardData['code'] ?? ''}'),
+            title: Text('${cardLabel(giftCardData['code']?.toString() ?? '')} ${giftCardData['code'] ?? ''}'),
             content: SizedBox(
               width: 360,
               child: SingleChildScrollView(
@@ -1567,9 +1596,9 @@ final giftCardData = await _runWithProgress(
 
       await showGiftCheckErrorDialog(
         context: context,
-        title: 'No se pudo consultar la Gift Card',
+        title: 'No se pudo consultar la tarjeta',
         message:
-            'No pudimos consultar la información de la Gift Card. '
+            'No pudimos consultar la información de la tarjeta. '
             'Verificá el código y la conexión e intentá nuevamente.',
       );
     }
@@ -1605,7 +1634,7 @@ final usages = await usagesFuture;
     if (remainingAmount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Esta Gift Card ya no tiene saldo disponible.'),
+          content: Text('Esta tarjeta ya no tiene saldo disponible.'),
         ),
       );
       return;
@@ -1617,9 +1646,7 @@ final usages = await usagesFuture;
         : null;
 
     if (isGiftCardExpired(rawExpirationDate)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Esta Gift Card está vencida.')),
-      );
+      await showExpiredCardNotice(context, code: code, expirationDate: rawExpirationDate!);
       return;
     }
 
@@ -1681,7 +1708,7 @@ final usages = await usagesFuture;
                 TextField(
                   controller: amountController,
                   keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  inputFormatters: [IntegerAmountFormatter()],
                   decoration: InputDecoration(
                     labelText: 'Importe a utilizar',
                     hintText:
@@ -1739,7 +1766,7 @@ final usages = await usagesFuture;
           content: Text(
             '¿Confirmás utilizar '
             '${money(amountUsed.toStringAsFixed(0))} '
-            'de la Gift Card $code?',
+            'de ${cardLabel(code)} $code?',
           ),
           actions: [
             TextButton(
@@ -1812,17 +1839,17 @@ final newStatus =
 
       String message =
           'No se registró ningún uso. '
-          'La Gift Card pudo haber cambiado mientras '
+          'La tarjeta pudo haber cambiado mientras '
           'se confirmaba la operación. '
           'Consultá nuevamente el saldo e intentá otra vez.';
 
       if (errorText.contains('supera el saldo disponible')) {
         message =
             'El saldo disponible cambió o el importe ingresado '
-            'supera el saldo actual de la Gift Card.';
+            'supera el saldo actual de la tarjeta.';
       } else if (errorText.contains('No encontramos la Gift Card')) {
         message =
-            'No encontramos una Gift Card con ese código. '
+            'No encontramos una Gift Card o voucher con ese código. '
             'Verificá que esté escrito correctamente.';
       } else if (errorText.contains('no es válido')) {
         message =
@@ -1939,7 +1966,7 @@ final newStatus =
               ),
 
               const SizedBox(height: 36),
-              Card(
+                            Card(
                 elevation: 0,
                 color: const Color(0xFFE4F3EA),
                 child: ListTile(
@@ -1976,7 +2003,7 @@ final newStatus =
                     ),
                   ),
                   subtitle: const Text(
-                    'Escaneá el código de una Gift Card emitida.',
+                    'Escaneá una Gift Card o un voucher.',
                   ),
                   trailing: const Icon(Icons.chevron_right, color: greenColor),
                 ),
@@ -2015,6 +2042,8 @@ final newStatus =
 
               const SizedBox(height: 16),
 
+              const VoucherMenu(),
+              const SizedBox(height: 16),
               Card(
                 elevation: 0,
                 color: Colors.white,
@@ -2024,7 +2053,7 @@ final newStatus =
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const UsageHistoryPage(),
+                        builder: (context) => const CardHistoryPage(),
                       ),
                     );
                   },
@@ -2035,7 +2064,7 @@ final newStatus =
                     size: 38,
                   ),
                   title: const Text(
-                    'Historial de usos',
+                    'Historial',
                     style: TextStyle(
                       color: darkTextColor,
                       fontSize: 18,
@@ -2043,7 +2072,7 @@ final newStatus =
                     ),
                   ),
                   subtitle: const Text(
-                    'Consultar Gift Cards utilizadas y sus movimientos.',
+                    'Emitidos y usos de Gift Cards y vouchers.',
                   ),
                   trailing: const Icon(Icons.chevron_right, color: greenColor),
                 ),
@@ -2061,7 +2090,9 @@ final newStatus =
 // ------------------------------------------------------------
 
 class AdminHomePage extends StatefulWidget {
-  const AdminHomePage({super.key, required this.displayName});
+  const AdminHomePage({super.key, required this.displayName, this.service});
+
+  final GiftCardService? service;
 
   final String displayName;
 
@@ -2070,7 +2101,7 @@ class AdminHomePage extends StatefulWidget {
 }
 
 class _AdminHomePageState extends State<AdminHomePage> {
-  final GiftCardService _giftCardService = GiftCardService();
+  late final GiftCardService _giftCardService = widget.service ?? GiftCardService();
   StreamSubscription<List<Map<String, dynamic>>>? _giftCardsSubscription;
 
   final List<GiftCard> _giftCards = [];
@@ -2275,20 +2306,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
     return const Color(0xFFE4F3EA);
   }
 
-  void _openGiftCardActions(GiftCard giftCard) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => GiftCardSuccessPage(
-          giftCard: giftCard,
-          isExistingGiftCard: true,
-          onStatusChanged: (newStatus) {
-            _updateGiftCardStatus(giftCard.code, newStatus);
-          },
-        ),
-      ),
-    );
-  }
+
 
   void _openAdminManagement() {
     Navigator.push(
@@ -2297,186 +2315,9 @@ class _AdminHomePageState extends State<AdminHomePage> {
     );
   }
 
-  Future<void> _changeStatus(GiftCard giftCard, String newStatus) async {
-    final title = newStatus == 'Bloqueada'
-        ? 'Bloquear Gift Card'
-        : newStatus == 'Anulada'
-        ? 'Anular Gift Card'
-        : 'Activar Gift Card';
 
-    final message = newStatus == 'Bloqueada'
-        ? 'La Gift Card no podrá utilizarse mientras esté bloqueada.'
-        : newStatus == 'Anulada'
-        ? 'La Gift Card quedará anulada y no podrá volver a utilizarse.'
-        : 'La Gift Card volverá a estar activa.';
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(title),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, false);
-              },
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, true);
-              },
-              style: FilledButton.styleFrom(
-                backgroundColor: newStatus == 'Anulada'
-                    ? Colors.red
-                    : greenColor,
-              ),
-              child: const Text('Confirmar'),
-            ),
-          ],
-        );
-      },
-    );
 
-    if (confirmed != true || !mounted) {
-      return;
-    }
-
-    _updateGiftCardStatus(giftCard.code, newStatus);
-  }
-
-  Future<void> _showDetails(GiftCard giftCard) async {
-    final usages = await _giftCardService.loadGiftCardUsages(giftCard.code);
-
-    if (usages.isNotEmpty) {
-      double parseAmount(Object? value) {
-        final text = value?.toString() ?? '';
-
-        final digitsOnly = text.replaceAll(RegExp(r'[^0-9]'), '');
-
-        return double.tryParse(digitsOnly) ?? 0;
-      }
-
-      final originalAmount = parseAmount(giftCard.amount);
-
-      final usedAmount = usages.fold<double>(0, (total, usage) {
-        return total + parseAmount(usage['amountUsed']);
-      });
-
-      final remainingAmount = originalAmount - usedAmount;
-
-      final status = remainingAmount <= 0
-          ? 'Canjeada'
-          : giftCard.status == 'Anulada'
-          ? 'Anulada'
-          : giftCard.status == 'Bloqueada'
-          ? 'Bloqueada'
-          : isGiftCardExpired(giftCard.expirationDate)
-          ? 'Vencida'
-          : 'Parcialmente usada';
-
-      await showUsageReceipt(
-        context: context,
-        code: giftCard.code,
-        username: usages.first['username']?.toString() ?? '',
-        originalAmount: originalAmount.toStringAsFixed(0),
-        usedAmount: usedAmount.toStringAsFixed(0),
-        remainingAmount: remainingAmount.toStringAsFixed(0),
-        status: status,
-        onBlock: () {
-          _changeStatus(giftCard, 'Bloqueada');
-        },
-        onCancel: () {
-          _changeStatus(giftCard, 'Anulada');
-        },
-        onReactivate: () {
-          _changeStatus(giftCard, 'Activa');
-        },
-      );
-
-      return;
-    }
-
-    final expirationText = giftCard.expirationDate == null
-        ? 'Sin vencimiento'
-        : formatDate(giftCard.expirationDate!);
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Detalle de Gift Card'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Código: ${giftCard.code}',
-                style: const TextStyle(
-                  color: greenColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text('Importe: ${money(giftCard.amount)}'),
-              const SizedBox(height: 8),
-              Text('Vence: $expirationText'),
-              const SizedBox(height: 8),
-              Text('Estado: ${giftCard.displayStatus}'),
-            ],
-          ),
-          actions: [
-            if (giftCard.status != 'Anulada')
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  _openGiftCardActions(giftCard);
-                },
-                child: const Text('Compartir Gift Card'),
-              ),
-
-            if (giftCard.status == 'Activa')
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  _changeStatus(giftCard, 'Bloqueada');
-                },
-                child: const Text('Bloquear'),
-              ),
-
-            if (giftCard.status == 'Bloqueada')
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  _changeStatus(giftCard, 'Activa');
-                },
-                child: const Text('Activar'),
-              ),
-
-            if (giftCard.status != 'Anulada')
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  _changeStatus(giftCard, 'Anulada');
-                },
-                child: const Text(
-                  'Anular',
-                  style: TextStyle(color: Colors.red),
-                ),
-              ),
-
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-              },
-              child: const Text('Cerrar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   Future<void> _logout() async {
     final confirmed = await showDialog<bool>(
@@ -2639,6 +2480,36 @@ class _AdminHomePageState extends State<AdminHomePage> {
 
               const SizedBox(height: 16),
 
+              const VoucherMenu(),
+              const SizedBox(height: 16),
+              Card(
+                elevation: 0,
+                color: const Color(0xFFE4F3EA),
+                child: ListTile(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const CardHistoryPage(),
+                      ),
+                    );
+                  },
+                  leading: const Icon(
+                    Icons.history_rounded,
+                    color: greenColor,
+                    size: 32,
+                  ),
+                  title: const Text(
+                    'Historial de Gift Cards y vouchers',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: const Text(
+                    'Emitidos y usos de Gift Cards y vouchers.',
+                  ),
+                  trailing: const Icon(Icons.chevron_right, color: greenColor),
+                ),
+              ),
+
               Card(
                 elevation: 0,
                 color: Colors.white,
@@ -2663,41 +2534,10 @@ class _AdminHomePageState extends State<AdminHomePage> {
                 ),
               ),
 
-              const SizedBox(height: 28),
-              Card(
-                elevation: 0,
-                color: const Color(0xFFE4F3EA),
-                child: ListTile(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => GiftCardHistoryPage(
-                          giftCards: List<GiftCard>.from(_giftCards),
-                        ),
-                      ),
-                    );
-                  },
-                  leading: const Icon(
-                    Icons.history_rounded,
-                    color: greenColor,
-                    size: 32,
-                  ),
-                  title: const Text(
-                    'Historial de Gift Cards',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: const Text(
-                    'Consultar todas las Gift Cards emitidas.',
-                  ),
-                  trailing: const Icon(Icons.chevron_right, color: greenColor),
-                ),
-              ),
-
               const SizedBox(height: 20),
 
               const Text(
-                'Gift Cards emitidas',
+                'Gift Cards y vouchers emitidos',
                 style: TextStyle(
                   color: darkTextColor,
                   fontSize: 20,
@@ -2741,7 +2581,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                     color: Colors.white,
                     margin: const EdgeInsets.only(bottom: 12),
                     child: ListTile(
-                      onTap: () => _showDetails(giftCard),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CardHistoryDetailPage(code: giftCard.code))),
                       leading: CircleAvatar(
                         backgroundColor: _statusBackgroundColor(
                           giftCard.displayStatus,
@@ -2751,8 +2591,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
                           color: _statusColor(giftCard.displayStatus),
                         ),
                       ),
-                      title: const Text(
-                        'Gift Card',
+                      title: Text(
+                        giftCard.label,
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       subtitle: Text(
@@ -3567,6 +3407,7 @@ class CreateGiftCardPage extends StatefulWidget {
 class _CreateGiftCardPageState extends State<CreateGiftCardPage> {
   final _formKey = GlobalKey<FormState>();
   final _amountController = TextEditingController();
+  int _integerAmount = 0;
   final _dedicationController = TextEditingController();
   final _senderController = TextEditingController();
   final _recipientController = TextEditingController();
@@ -4022,7 +3863,7 @@ class _CreateGiftCardPageState extends State<CreateGiftCardPage> {
 
     final giftCard = GiftCard(
       code: widget.code,
-      amount: _amountController.text.trim(),
+      amount: _integerAmount.toString(),
       expirationDate: _expirationDate,
       dedication: _dedicationController.text.trim(),
       senderName: _senderController.text.trim(),
@@ -4080,22 +3921,15 @@ class _CreateGiftCardPageState extends State<CreateGiftCardPage> {
 
                   TextFormField(
                     controller: _amountController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    onChanged: (text) => _integerAmount = cleanIntegerAmount(text),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [IntegerAmountFormatter()],
                     decoration: appInputDecoration(
                       label: 'Importe',
-                      hint: 'Ejemplo: 50000',
+                      hint: 'Ejemplo: 50.000',
                       prefixIcon: Icons.payments_outlined,
                     ),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'Ingresá un importe';
-                      }
-
-                      return null;
-                    },
+                    validator: (value) => validateVoucherAmount(amountDigits(value ?? '')),
                   ),
 
                   const SizedBox(height: 18),
@@ -4295,12 +4129,12 @@ class GiftCardVisual extends StatelessWidget {
         return Center(
           child: SizedBox(
             width: width,
-            height: width * 785 / 535,
+            height: width * (giftCard.isVoucher ? 650 : 785) / 535,
             child: FittedBox(
               fit: BoxFit.contain,
               child: Container(
                 width: 535,
-                height: 785,
+                height: giftCard.isVoucher ? 650 : 785,
                 padding: const EdgeInsets.fromLTRB(50, 26, 50, 16),
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -4326,7 +4160,7 @@ class GiftCardVisual extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('GIFT', style: GoogleFonts.montserrat(
+                          Text(giftCard.isVoucher ? 'VOU' : 'GIFT', style: GoogleFonts.montserrat(
                             color: Colors.black,
                             fontSize: 68,
                             fontWeight: FontWeight.w700,
@@ -4336,7 +4170,7 @@ class GiftCardVisual extends StatelessWidget {
                           Stack(
                             alignment: Alignment.center,
                             children: [
-                              Text('CARD', style: GoogleFonts.montserrat(
+                              Text(giftCard.isVoucher ? 'CHER' : 'CARD', style: GoogleFonts.montserrat(
                                 foreground: Paint()
                                   ..style = PaintingStyle.stroke
                                   ..strokeWidth = 2
@@ -4345,7 +4179,7 @@ class GiftCardVisual extends StatelessWidget {
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: -1.5,
                               )),
-                              Text('CARD', style: GoogleFonts.montserrat(
+                              Text(giftCard.isVoucher ? 'CHER' : 'CARD', style: GoogleFonts.montserrat(
                                 color: Colors.white,
                                 fontSize: 68,
                                 fontWeight: FontWeight.w700,
@@ -4387,10 +4221,12 @@ class GiftCardVisual extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 32),
-                    _GiftCardLine(label: 'PARA:', value: giftCard.recipientName),
-                    const SizedBox(height: 14),
-                    _GiftCardLine(label: 'DE:', value: giftCard.senderName),
-                    const SizedBox(height: 20),
+                    if (!giftCard.isVoucher) ...[
+                      _GiftCardLine(label: 'PARA:', value: giftCard.recipientName),
+                      const SizedBox(height: 14),
+                      _GiftCardLine(label: 'DE:', value: giftCard.senderName),
+                      const SizedBox(height: 20),
+                    ],
                     const Spacer(),
                     FittedBox(
                       fit: BoxFit.scaleDown,
@@ -4417,6 +4253,18 @@ class GiftCardVisual extends StatelessWidget {
                         ],
                       ),
                     ),
+                    if (giftCard.isVoucher) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'VENCE: ${formatDate(giftCard.expirationDate!)}',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.montserrat(
+                          color: Colors.black,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     Text(
                       'CÓDIGO ${giftCard.code}',
@@ -4718,7 +4566,7 @@ class _GiftCardSuccessPageState extends State<GiftCardSuccessPage> {
       );
 
       await SharePlus.instance.share(
-        ShareParams(title: 'Gift Card', files: [file]),
+        ShareParams(title: widget.giftCard.label, files: [file]),
       );
     } catch (_) {
       if (!mounted) {
@@ -4769,16 +4617,16 @@ class _GiftCardSuccessPageState extends State<GiftCardSuccessPage> {
 
   Future<void> _changeStatus(String newStatus) async {
     final title = newStatus == 'Bloqueada'
-        ? 'Bloquear Gift Card'
+        ? 'Bloquear ${widget.giftCard.label}'
         : newStatus == 'Anulada'
-        ? 'Anular Gift Card'
-        : 'Activar Gift Card';
+        ? 'Anular ${widget.giftCard.label}'
+        : 'Activar ${widget.giftCard.label}';
 
     final message = newStatus == 'Bloqueada'
-        ? 'La Gift Card no podrá utilizarse mientras esté bloqueada.'
+        ? 'No se podrá utilizar mientras esté bloqueado/a.'
         : newStatus == 'Anulada'
-        ? 'La Gift Card quedará anulada y no podrá volver a utilizarse.'
-        : 'La Gift Card volverá a estar activa.';
+        ? 'Quedará anulado/a y no podrá volver a utilizarse.'
+        : 'Volverá a estar disponible.';
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -4838,8 +4686,8 @@ class _GiftCardSuccessPageState extends State<GiftCardSuccessPage> {
       appBar: AppBar(
         title: Text(
           widget.isExistingGiftCard
-              ? 'Detalle de Gift Card'
-              : 'Gift Card creada',
+              ? 'Detalle de ${widget.giftCard.label}'
+              : (widget.giftCard.isVoucher ? 'Voucher creado' : 'Gift Card creada'),
         ),
         backgroundColor: greenColor,
         foregroundColor: Colors.white,
@@ -4859,8 +4707,8 @@ class _GiftCardSuccessPageState extends State<GiftCardSuccessPage> {
 
                 const SizedBox(height: 16),
 
-                const Text(
-                  'Gift Card guardada correctamente',
+                Text(
+                  (widget.giftCard.isVoucher ? 'Voucher guardado correctamente' : 'Gift Card guardada correctamente'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: darkTextColor,
@@ -4888,7 +4736,7 @@ class _GiftCardSuccessPageState extends State<GiftCardSuccessPage> {
                     label: Text(
                       _isSharing
                           ? 'Preparando imagen...'
-                          : 'Compartir Gift Card',
+                          : 'Compartir ${widget.giftCard.label}',
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -4927,7 +4775,7 @@ class _GiftCardSuccessPageState extends State<GiftCardSuccessPage> {
                 OutlinedButton.icon(
                   onPressed: () => _changeStatus('Bloqueada'),
                   icon: const Icon(Icons.lock_outline),
-                  label: const Text('Bloquear Gift Card'),
+                  label: Text('Bloquear ${widget.giftCard.label}'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.orange.shade800,
                     padding: const EdgeInsets.symmetric(vertical: 15),
@@ -4939,7 +4787,7 @@ class _GiftCardSuccessPageState extends State<GiftCardSuccessPage> {
                 OutlinedButton.icon(
                   onPressed: () => _changeStatus('Anulada'),
                   icon: const Icon(Icons.cancel_outlined),
-                  label: const Text('Anular Gift Card'),
+                  label: Text('Anular ${widget.giftCard.label}'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.red,
                     padding: const EdgeInsets.symmetric(vertical: 15),
@@ -4963,7 +4811,7 @@ class _GiftCardSuccessPageState extends State<GiftCardSuccessPage> {
                 OutlinedButton.icon(
                   onPressed: () => _changeStatus('Anulada'),
                   icon: const Icon(Icons.cancel_outlined),
-                  label: const Text('Anular Gift Card'),
+                  label: Text('Anular ${widget.giftCard.label}'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.red,
                     padding: const EdgeInsets.symmetric(vertical: 15),
@@ -4972,7 +4820,7 @@ class _GiftCardSuccessPageState extends State<GiftCardSuccessPage> {
               ],
 
               if (_currentStatus == 'Anulada')
-                const Text(
+                Text(
                   'Esta Gift Card está anulada.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -5586,7 +5434,7 @@ class GiftCardHistoryPage extends StatelessWidget {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: Text('Gift Card ${giftCard.code}'),
+          title: Text('${giftCard.label} ${giftCard.code}'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -5618,7 +5466,7 @@ class GiftCardHistoryPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Historial de Gift Cards'),
+        title: const Text('Historial de Gift Cards y vouchers'),
         backgroundColor: greenColor,
         foregroundColor: Colors.white,
       ),
@@ -5726,7 +5574,7 @@ class GiftCardHistoryPage extends StatelessWidget {
                                 ),
                               ),
                               title: Text(
-                                'Gift Card ${giftCard.code}',
+                                '${giftCard.label} ${giftCard.code}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -5839,7 +5687,7 @@ class _LocalQrScannerPageState extends State<LocalQrScannerPage> {
             right: 24,
             bottom: 32,
             child: Text(
-              'Apuntá la cámara al código QR de la Gift Card.',
+              'Apuntá la cámara al QR de la Gift Card o voucher.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white,
@@ -6070,7 +5918,7 @@ class _UsageHistoryPageState extends State<UsageHistoryPage> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Gift Card $code',
+                                  '${cardLabel(code)} $code',
                                   style: const TextStyle(
                                     color: darkTextColor,
                                     fontSize: 18,
