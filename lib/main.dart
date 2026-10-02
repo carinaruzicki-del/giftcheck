@@ -20,6 +20,7 @@ import 'dart:async';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math' as math;
 import 'voucher_validation.dart';
+import 'feature_flags.dart';
 
 import 'integer_amount.dart';
 
@@ -1377,7 +1378,7 @@ class LocalHomePage extends StatelessWidget {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Consultar Gift Card o voucher'),
+          title: const Text((vouchersEnabled ? 'Consultar Gift Card o voucher' : 'Consultar Gift Card')),
           content: TextFormField(
             initialValue: enteredCode,
             onChanged: (value) => enteredCode = value,
@@ -1414,6 +1415,12 @@ class LocalHomePage extends StatelessWidget {
     try {
       final service = this.service ?? GiftCardService();
       final normalizedCode = code.trim().toUpperCase();
+      if (!vouchersEnabled && isVoucherCode(normalizedCode)) {
+        await showGiftCheckErrorDialog(context: context, title: 'Código no disponible',
+          message: 'Este código no está habilitado para su uso.');
+        return;
+      }
+
 
       if (profile.isAdministrator) {
         await Navigator.push(context, MaterialPageRoute(builder: (_) => CardHistoryDetailPage(code: normalizedCode)));
@@ -1432,7 +1439,7 @@ final giftCardData = await _runWithProgress(
       if (giftCardData == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No encontramos una Gift Card o voucher con ese código.'),
+            content: Text((vouchersEnabled ? 'No encontramos una Gift Card o voucher con ese código.' : 'No encontramos una Gift Card con ese código.')),
           ),
         );
         return;
@@ -1849,8 +1856,9 @@ final newStatus =
             'supera el saldo actual de la tarjeta.';
       } else if (errorText.contains('No encontramos la Gift Card')) {
         message =
-            'No encontramos una Gift Card o voucher con ese código. '
-            'Verificá que esté escrito correctamente.';
+            vouchersEnabled
+              ? 'No encontramos una Gift Card o voucher con ese código. Verificá que esté escrito correctamente.'
+              : 'No encontramos una Gift Card con ese código. Verificá que esté escrito correctamente.';
       } else if (errorText.contains('no es válido')) {
         message =
             'El importe ingresado no es válido. '
@@ -2003,7 +2011,7 @@ final newStatus =
                     ),
                   ),
                   subtitle: const Text(
-                    'Escaneá una Gift Card o un voucher.',
+                    (vouchersEnabled ? 'Escaneá una Gift Card o un voucher.' : 'Escaneá una Gift Card.'),
                   ),
                   trailing: const Icon(Icons.chevron_right, color: greenColor),
                 ),
@@ -2042,7 +2050,7 @@ final newStatus =
 
               const SizedBox(height: 16),
 
-              const VoucherMenu(),
+              if (vouchersEnabled) const VoucherMenu(),
               const SizedBox(height: 16),
               Card(
                 elevation: 0,
@@ -2072,7 +2080,7 @@ final newStatus =
                     ),
                   ),
                   subtitle: const Text(
-                    'Emitidos y usos de Gift Cards y vouchers.',
+                    (vouchersEnabled ? 'Emitidos y usos de Gift Cards y vouchers.' : 'Emitidos y usos de Gift Cards.'),
                   ),
                   trailing: const Icon(Icons.chevron_right, color: greenColor),
                 ),
@@ -2142,7 +2150,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
         setState(() {
           _giftCards
             ..clear()
-            ..addAll(loadedGiftCards);
+            ..addAll(loadedGiftCards.where((card) => vouchersEnabled || !card.isVoucher));
         });
       },
       onError: (_) {
@@ -2480,7 +2488,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
 
               const SizedBox(height: 16),
 
-              const VoucherMenu(),
+              if (vouchersEnabled) const VoucherMenu(),
               const SizedBox(height: 16),
               Card(
                 elevation: 0,
@@ -2500,11 +2508,11 @@ class _AdminHomePageState extends State<AdminHomePage> {
                     size: 32,
                   ),
                   title: const Text(
-                    'Historial de Gift Cards y vouchers',
+                    (vouchersEnabled ? 'Historial de Gift Cards y vouchers' : 'Historial de Gift Cards'),
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   subtitle: const Text(
-                    'Emitidos y usos de Gift Cards y vouchers.',
+                    (vouchersEnabled ? 'Emitidos y usos de Gift Cards y vouchers.' : 'Emitidos y usos de Gift Cards.'),
                   ),
                   trailing: const Icon(Icons.chevron_right, color: greenColor),
                 ),
@@ -2537,7 +2545,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
               const SizedBox(height: 20),
 
               const Text(
-                'Gift Cards y vouchers emitidos',
+                (vouchersEnabled ? 'Gift Cards y vouchers emitidos' : 'Gift Cards emitidas'),
                 style: TextStyle(
                   color: darkTextColor,
                   fontSize: 20,
@@ -5466,7 +5474,7 @@ class GiftCardHistoryPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Historial de Gift Cards y vouchers'),
+        title: const Text((vouchersEnabled ? 'Historial de Gift Cards y vouchers' : 'Historial de Gift Cards')),
         backgroundColor: greenColor,
         foregroundColor: Colors.white,
       ),
@@ -5687,7 +5695,7 @@ class _LocalQrScannerPageState extends State<LocalQrScannerPage> {
             right: 24,
             bottom: 32,
             child: Text(
-              'Apuntá la cámara al QR de la Gift Card o voucher.',
+              (vouchersEnabled ? 'Apuntá la cámara al QR de la Gift Card o voucher.' : 'Apuntá la cámara al QR de la Gift Card.'),
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white,

@@ -1,3 +1,4 @@
+import 'package:giftcheck/feature_flags.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
@@ -7,6 +8,7 @@ import 'package:giftcheck/account_service.dart';
 import 'package:giftcheck/gift_card_service.dart';
 
 void main() {
+  if (!vouchersEnabled) return;
   Future<FakeFirebaseFirestore> seed() async {
     final db = FakeFirebaseFirestore();
     await db.collection('giftCards').doc('VA000001').set({

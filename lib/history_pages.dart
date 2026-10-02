@@ -38,6 +38,7 @@ class _CardHistoryPageState extends State<CardHistoryPage> {
       if (!snapshot.hasData)
         return const Center(child: CircularProgressIndicator());
       final records = snapshot.data!
+          .where((r) => vouchersEnabled || !isVoucherCode((r[used ? 'giftCardCode' : 'code'] ?? '').toString()))
           .where(
             (r) => (r[used ? 'giftCardCode' : 'code'] ?? '')
                 .toString()
@@ -194,7 +195,7 @@ class _CardHistoryDetailPageState extends State<CardHistoryDetailPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text('${cardLabel(widget.code)} ${widget.code}'),
+      title: Text(!vouchersEnabled && isVoucherCode(widget.code) ? 'Código no disponible' : '${cardLabel(widget.code)} ${widget.code}'),
       backgroundColor: greenColor,
       foregroundColor: Colors.white,
     ),
@@ -207,7 +208,7 @@ class _CardHistoryDetailPageState extends State<CardHistoryDetailPage> {
           );
         if (!snapshot.hasData)
           return const Center(child: CircularProgressIndicator());
-        final matches = snapshot.data!.where((r) => r['code'] == widget.code);
+        final matches = snapshot.data!.where((r) => r['code'] == widget.code && (vouchersEnabled || !isVoucherCode(widget.code)));
         if (matches.isEmpty)
           return const Center(child: Text('No se encontró la tarjeta.'));
         final data = matches.first;

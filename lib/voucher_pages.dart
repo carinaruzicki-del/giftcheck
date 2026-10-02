@@ -5,7 +5,7 @@ class VoucherMenu extends StatelessWidget {
   const VoucherMenu({super.key});
 
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context) => !vouchersEnabled ? const SizedBox.shrink() : Column(
     children: [
       Card(
         elevation: 0,
@@ -143,7 +143,9 @@ class _CreateVoucherPageState extends State<CreateVoucherPage> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
+  Widget build(BuildContext context) => !vouchersEnabled
+      ? Scaffold(appBar: AppBar(title: const Text('Sección no disponible')), body: const Center(child: Text('Esta sección no está habilitada.')))
+      : PopScope(
     canPop: !_saving,
     child: Scaffold(
       appBar: AppBar(

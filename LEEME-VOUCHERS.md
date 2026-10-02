@@ -2,6 +2,19 @@
 
 Preparado el 1 de octubre de 2026 sobre `main`, commit `b12719997ef17bfb4ac769aee79775de396adfb6`, verificado contra GitHub.
 
+## Estado actual: vouchers ocultos
+
+Desde el 2 de octubre de 2026, `lib/feature_flags.dart` desactiva los vouchers por defecto. Se ocultan para ambos roles en inicio e historial, y se impide abrir la creación o consultar sus códigos desde esta versión. Los datos y el código se conservan; Gift Cards, escaneo y formato de importes continúan disponibles.
+
+Para reactivarlos, ejecutar/compilar con `--dart-define=ENABLE_VOUCHERS=true` y publicar la nueva compilación. Para comprobar ambas configuraciones:
+
+```sh
+flutter test
+flutter test --dart-define=ENABLE_VOUCHERS=true
+```
+
+Ocultar la interfaz no cambia las reglas de Firebase ni revoca permisos a clientes que todavía usen una versión anterior. Es necesario publicar la web nueva para que los usuarios vean este cambio.
+
 ## Abrir
 
 En Visual Studio Code usá **Archivo → Abrir carpeta** y seleccioná tu carpeta original: `/Users/Usuario/Desktop/giftcheck`.

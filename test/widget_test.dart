@@ -1,3 +1,4 @@
+import 'package:giftcheck/feature_flags.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +12,7 @@ Widget host(Widget child) => MaterialApp(
 );
 
 void main() {
+  if (!vouchersEnabled) return;
   testWidgets('Voucher requires amount and expiration; numbers only', (
     tester,
   ) async {
